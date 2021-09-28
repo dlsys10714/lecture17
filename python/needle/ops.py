@@ -2,9 +2,9 @@
 # Global operator table.
 import numpy as np
 from numbers import Number
-from .autograd import Op, Tensor
+from .autograd import Op, Tensor, Tuple, Value
 from .device import default_device
-from typing import Optional
+from typing import Optional, List
 
 OP_TABLE = {}
 
@@ -65,6 +65,51 @@ def register_op_attr(op_name, attr_name, attr_value=None):
     if attr_value is None:
         return _register
     return _register(attr_value)
+
+
+class MakeTupleOp(Op):
+    def __call__(self, *args: List[Value]) -> Tuple:
+        return Tuple.make_from_op(self, list(args))
+
+    def gradient(self, out_grad, node):
+        assert isinstance(out_grad, Tuple)
+        return [out_grad[i] for i in range(len(out_grad))]
+
+
+make_tuple = register_op("MakeTuple", MakeTupleOp())
+
+
+class TupleGetItemOp(Op):
+    def __call__(self, a: Tuple, index: int, *, fold_const=True) -> Tensor:
+        assert isinstance(a, Tuple)
+        # constant folding
+        if fold_const and isinstance(a.op, MakeTupleOp):
+            return a.inputs[index]
+        return Tensor.make_from_op(self, [a], attrs={"index": index})
+
+    def gradient(self, out_grad, node):
+        index = node.attrs["index"]
+        in_grad = []
+        for i, value in enumerate(node.inputs[0]):
+            if i != index:
+                in_grad.append(zeros_like(value))
+            else:
+                in_grad.append(out_grad)
+        return [make_tuple(*in_grad)]
+
+
+tuple_get_item = register_op("TupleGetItem", TupleGetItemOp())
+
+
+class FusedAddScalarsOp(Op):
+    def __call__(self, a: Tensor, c0: float, c1: float) -> Tuple:
+        return Tuple.make_from_op(self, [a], attrs={"c0": c0, "c1": c1})
+
+    def gradient(self, out_grad, node):
+        return [out_grad[0] + out_grad[1]]
+
+
+fused_add_scalars = register_op("FusedAddScalars", FusedAddScalarsOp())
 
 
 class EWiseAddOp(Op):

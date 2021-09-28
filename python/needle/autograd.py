@@ -12,12 +12,15 @@ class Op:
 
     def gradient(self, out_grad: "Value", node: "Value") -> List["Value"]:
         """Compute partial adjoint for each input value for a given output adjoint.
+
         Parameters
         ----------
         out_grad: Value
             The adjoint wrt to the output value.
+
         node: Value
             The value node of forward evaluation.
+
         Returns
         -------
         input_grads: List[Value]
@@ -44,19 +47,15 @@ class Value:
         """Run compute to realize the cached data"""
         # avoid recomputation
         if self.cached_data is not None:
-            return
+            return self.cached_data
         # note: data implicitly calls realized cached data
         self.cached_data = self.cached_device.compute(
-            self.op, [x.data for x in self.inputs], self.attrs
+            self.op, [x.realize_cached_data() for x in self.inputs], self.attrs
         )
+        return self.cached_data
 
     def is_leaf(self):
         return self.op is None
-
-    @property
-    def data(self):
-        self.realize_cached_data()
-        return self.cached_data
 
     def _init(
         self,
@@ -94,6 +93,62 @@ class Value:
         self.cached_device = cached_device
         self.requires_grad = requires_grad
 
+    @property
+    def device(self):
+        return self.cached_device
+
+    @classmethod
+    def make_const(cls, data, device, requires_grad=False):
+        value = cls.__new__(cls)
+        value._init(
+            None,
+            [],
+            cached_data=data,
+            cached_device=device,
+            requires_grad=requires_grad,
+        )
+        return value
+
+    @classmethod
+    def make_from_op(
+        cls, op: Op, inputs: List["Value"], *, attrs=None, cached_device=None
+    ):
+        value = cls.__new__(cls)
+        value._init(op, inputs, attrs=attrs, cached_device=cached_device)
+
+        if not LAZY_MODE:
+            if not value.requires_grad:
+                return value.detach()
+            value.realize_cached_data()
+        return value
+
+
+class Tuple(Value):
+    def __len__(self):
+        cdata = self.realize_cached_data()
+        return len(cdata)
+
+    def __getitem__(self, index: int):
+        return needle.ops.tuple_get_item(self, index)
+
+    def tuple(self):
+        return tuple([x for x in self])
+
+    def __repr__(self):
+        return "needle.Tuple" + str(self.tuple())
+
+    def __str__(self):
+        return self.__repr__()
+
+    def __add__(self, other):
+        assert isinstance(other, Tuple)
+        assert len(self) == len(other)
+        return needle.ops.make_tuple(*[self[i] + other[i] for i in range(len(self))])
+
+    def detach(self):
+        """Create a new tensor that shares the data but detaches from the graph."""
+        return Tuple.make_const(self.realize_cached_data(), self.device)
+
 
 class Tensor(Value):
     grad: "Tensor"
@@ -101,8 +156,20 @@ class Tensor(Value):
     def __init__(
         self, array, *, device: Optional[Device] = None, dtype=None, requires_grad=True
     ):
-        device = device if device else default_device()
-        cached_data = device.array(array, dtype=dtype)
+        if isinstance(array, Tensor):
+            if device is None:
+                device = array.device
+            if dtype is None:
+                dtype = array.dtype
+            if device == array.device and dtype == array.dtype:
+                cached_data = array.realize_cached_data()
+            else:
+                # fall back, copy through numpy conversion
+                cached_data = device.array(array.numpy())
+        else:
+            device = device if device else default_device()
+            cached_data = device.array(array, dtype=dtype)
+
         self._init(
             None,
             [],
@@ -111,58 +178,40 @@ class Tensor(Value):
             requires_grad=requires_grad,
         )
 
-    @staticmethod
-    def make_from_op(op: Op, inputs: List["Value"], *, attrs=None, cached_device=None):
-        tensor = Tensor.__new__(Tensor)
-        tensor._init(op, inputs, attrs=attrs, cached_device=cached_device)
-        if not LAZY_MODE:
-            tensor.realize_cached_data()
-        return tensor
-
-    @staticmethod
-    def make_const(data, device, requires_grad=False):
-        tensor = Tensor.__new__(Tensor)
-        tensor._init(
-            None,
-            [],
-            cached_data=data,
-            cached_device=device,
-            requires_grad=requires_grad,
-        )
-        return tensor
-
     @property
-    def device(self):
-        return self.cached_device
+    def data(self):
+        return self.detach()
+
+    @data.setter
+    def data(self, value):
+        assert isinstance(value, Tensor)
+        assert value.device == self.device and value.dtype == self.dtype
+        self.cached_data = value.realize_cached_data()
+
+    def detach(self):
+        """Create a new tensor that shares the data but detaches from the graph."""
+        return Tensor.make_const(self.realize_cached_data(), self.device)
 
     @property
     def shape(self):
-        return self.data.shape
+        return self.realize_cached_data().shape
 
     @property
     def dtype(self):
-        return self.data.dtype
+        return self.realize_cached_data().dtype
 
     def backward(self, out_grad=None):
         out_grad = out_grad if out_grad else needle.ops.ones_like(self)
         compute_gradient_of_variables(self, out_grad)
 
     def __repr__(self):
-        return "needle.Tensor(" + str(self.data) + ")"
+        return "needle.Tensor(" + str(self.realize_cached_data()) + ")"
 
     def __str__(self):
-        return self.data.__str__()
+        return self.realize_cached_data().__str__()
 
     def numpy(self):
-        return self.device.to_numpy(self.data)
-
-    @property
-    def flat(self):
-        return self.data.flat
-
-    @property
-    def size(self):
-        return self.data.size
+        return self.device.to_numpy(self.realize_cached_data())
 
     def __add__(self, other):
         if isinstance(other, Tensor):
@@ -172,17 +221,17 @@ class Tensor(Value):
             # 'other' argument is a constant
             return needle.ops.add_scalar(self, other)
 
-    def __sub__(self, other):
-        if isinstance(other, Tensor):
-            return needle.ops.add(self, needle.ops.negate(other))
-        else:
-            return needle.ops.add_scalar(self, needle.ops.negate(other))
-
     def __mul__(self, other):
         if isinstance(other, Tensor):
             return needle.ops.multiply(self, other)
         else:
             return needle.ops.multiply_scalar(self, other)
+
+    def __sub__(self, other):
+        if isinstance(other, Tensor):
+            return needle.ops.add(self, needle.ops.negate(other))
+        else:
+            return needle.ops.add_scalar(self, needle.ops.negate(other))
 
     def __truediv__(self, other):
         if isinstance(other, Tensor):
@@ -212,8 +261,8 @@ class Tensor(Value):
         return needle.ops.transpose(self, axes)
 
     __radd__ = __add__
-    __rsub__ = __sub__
     __rmul__ = __mul__
+    __rsub__ = __sub__
     __rmatmul__ = __matmul__
 
 
@@ -237,6 +286,10 @@ def compute_gradient_of_variables(output_tensor, out_grad):
     ### END YOUR SOLUTION
 
 
+
+##############################
+####### Helper Methods #######
+##############################
 def find_topo_sort(node_list: List[Value]) -> List[Value]:
     """Given a list of nodes, return a topological sort list of nodes ending in them.
 
@@ -256,9 +309,6 @@ def topo_sort_dfs(node, visited, topo_order):
     raise NotImplementedError()
     ### END YOUR SOLUTION
 
-##############################
-####### Helper Methods #######
-##############################
 
 def sum_node_list(node_list):
     """Custom sum function in order to avoid create redundant nodes in Python sum implementation."""

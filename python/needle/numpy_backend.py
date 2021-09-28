@@ -53,9 +53,24 @@ def register_numpy_compute(name, value=None):
 
 
 # device specific computations
+# device specific computations
+@register_numpy_compute("MakeTuple")
+def make_tuple(inputs, attrs):
+    return tuple(inputs)
+
+
+@register_numpy_compute("TupleGetItem")
+def tuple_get_item(inputs, attrs):
+    return inputs[0][attrs["index"]]
+
+
+@register_numpy_compute("FusedAddScalars")
+def fused_add_scalars(inputs, attrs):
+    return tuple([inputs[0] + attrs["c0"], inputs[0] + attrs["c1"]])
+
+
 @register_numpy_compute("EWiseAdd")
 def add(inputs, attrs):
-    assert len(inputs) == 2
     return np.add(inputs[0], inputs[1])
 
 
