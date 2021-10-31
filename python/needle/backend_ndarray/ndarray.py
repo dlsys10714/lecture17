@@ -12,6 +12,7 @@ def prod(x):
 
 class BackendDevice:
     """A backend device, wrapps the implementation module."""
+
     def __init__(self, name, mod):
         self.name = name
         self.mod = mod
@@ -33,6 +34,7 @@ def cuda():
     """Return cuda device"""
     try:
         from . import ndarray_backend_cuda
+
         return BackendDevice("cuda", ndarray_backend_cuda)
     except ImportError:
         return BackendDevice("cuda", None)
@@ -127,11 +129,7 @@ class NDArray:
         return len(self._shape)
 
     def __repr__(self):
-        return (
-            "NDArray("
-            + self.numpy().__str__()
-            + f", device={self.device})"
-        )
+        return "NDArray(" + self.numpy().__str__() + f", device={self.device})"
 
     def __str__(self):
         return self.numpy().__str__()

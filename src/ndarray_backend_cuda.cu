@@ -26,9 +26,7 @@ struct CudaArray {
   int size;
 };
 
-CudaArray CreateCudaArray(size_t size) {
-  return CudaArray(size);
-}
+CudaArray CreateCudaArray(size_t size) { return CudaArray(size); }
 
 struct CudaDims {
   dim3 block, grid;

@@ -286,7 +286,6 @@ def compute_gradient_of_variables(output_tensor, out_grad):
     ### END YOUR SOLUTION
 
 
-
 ##############################
 ####### Helper Methods #######
 ##############################

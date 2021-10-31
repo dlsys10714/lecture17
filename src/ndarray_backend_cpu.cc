@@ -31,7 +31,6 @@ void Fill(AlignedArray* out, scalar_t val) {
   }
 }
 
-
 void EwiseAdd(const AlignedArray& a, const AlignedArray& b, AlignedArray* out) {
   for (size_t i = 0; i < a.size; i++) {
     out->ptr[i] = a.ptr[i] + b.ptr[i];
