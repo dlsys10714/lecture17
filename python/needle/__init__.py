@@ -2,10 +2,8 @@ from .autograd import Tensor
 from . import ops
 from .ops import *
 
-# intialize numpy backend
 from . import numpy_backend
-from . import cuda_backend
+from . import nd_backend
 
-from .cuda_backend import cuda
-from . import device
+from .nd_backend import cuda, cpu
 from .numpy_backend import numpy_device
