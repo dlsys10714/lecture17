@@ -124,6 +124,11 @@ class NDArray:
         return self._device
 
     @property
+    def dtype(self):
+        # only support float32 for now
+        return "float32"
+
+    @property
     def ndim(self):
         """ Return number of dimensions. """
         return len(self._shape)
