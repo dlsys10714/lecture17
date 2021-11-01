@@ -5,7 +5,6 @@ from needle import backend_ndarray as nd
 
 def test_nd_empty():
     data = nd.empty([1, 2, 3], device=nd.cpu())
-    print(data.shape)
     assert data.shape == (1, 2, 3)
 
 
@@ -24,7 +23,19 @@ def test_nd_array():
     for device in [nd.numpy_device(), nd.cuda()]:
         check(device)
 
+def test_strides():
+    data = nd.array([1, 2, 3, 4], device=nd.numpy_device())
+    assert data.strides == (1,)
+    y  = data.as_strided((2, 1), (2, 1))
+    assert y.shape == (2, 1)
+    assert y.numpy()[1, 0] == 3
+    assert not y.is_compact()
+    z = y.compact()
+    assert z.compact()
+    np.testing.assert_equal(z.numpy(), y.numpy())
+
 
 if __name__ == "__main__":
     test_nd_empty()
     test_nd_array()
+    test_strides()
