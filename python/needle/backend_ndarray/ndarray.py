@@ -100,7 +100,7 @@ class NDArray:
         for i in range(1, len(shape) + 1):
             res.append(stride)
             stride *= shape[-i]
-        return tuple(res)
+        return tuple(res[::-1])
 
     @staticmethod
     def make(shape, strides=None, device=None, handle=None, offset=0):
@@ -164,12 +164,7 @@ class NDArray:
 
     def is_compact(self):
         """ Return true if array is compact in memory (i.e., strides are compact) """
-        stride = 1
-        for i in range(1, len(self._shape) + 1):
-            if stride != self._strides[-i]:
-                return False
-            stride *= self._shape[-i]
-        return self._offset == 0
+        return self._strides == self.compact_strides(self._shape) and self._offset == 0
 
     def compact(self):
         """ Convert a matrix to be compact """
