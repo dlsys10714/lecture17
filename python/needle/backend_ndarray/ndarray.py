@@ -163,8 +163,10 @@ class NDArray:
         )
 
     def is_compact(self):
-        """ Return true if array is compact in memory (i.e., strides are compact) """
-        return self._strides == self.compact_strides(self._shape) and self._offset == 0
+        """ Return true if array is compact in memory and internal size equals product
+        of the shape dimensions """
+        return (self._strides == self.compact_strides(self._shape) and
+                prod(self.shape) == self._handle.size)
 
     def compact(self):
         """ Convert a matrix to be compact """
